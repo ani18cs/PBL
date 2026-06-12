@@ -1,0 +1,168 @@
+{% extends "layout.html" %}
+
+{% block title %}Experiment Space - Defcon-D{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <h2>Experiment Workspace</h2>
+        <p class="text-muted">Launch and manage scheduled traffic simulation experiments</p>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Trigger Column -->
+    <div class="col-lg-5">
+        <div class="card p-4">
+            <span class="card-title mb-3">⚡ Launch New Simulation</span>
+            
+            <div class="mb-3">
+                <label class="form-label small">Experiment Name</label>
+                <input type="text" id="exp-name" class="form-control form-control-sm" placeholder="e.g. baseline_test_syn">
+            </div>
+            
+            <div class="mb-3">
+                <label class="form-label small">Traffic Profile</label>
+                <select id="exp-profile" class="form-select form-select-sm">
+                    <option value="normal">Legitimate User Flow (10 clients, low freq)</option>
+                    <option value="medium">Medium Elevate (30 clients, moderate freq)</option>
+                    <option value="heavy">Heavy Flood Attack (80 clients, high freq)</option>
+                    <option value="stress">Stress Test Attack (150 clients, intense freq)</option>
+                </select>
+            </div>
+            
+            <div class="mb-4">
+                <label class="form-label small">Duration (seconds)</label>
+                <input type="number" id="exp-duration" class="form-control form-control-sm" value="30">
+            </div>
+            
+            <div class="d-flex gap-2">
+                <button class="btn btn-success flex-grow-1" id="btn-run" onclick="startExperiment()">🚀 Run Simulation</button>
+                <button class="btn btn-danger" id="btn-stop" onclick="stopExperiment()">⏹️ Stop</button>
+            </div>
+            
+            <div class="mt-3 text-center d-none" id="active-indicator">
+                <span class="badge bg-success p-2">
+                    ACTIVE: <span id="active-name">test</span>
+                </span>
+            </div>
+        </div>
+    </div>
+
+    <!-- History Column -->
+    <div class="col-lg-7">
+        <div class="card p-4">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <span class="card-title">📜 Experiment Log History</span>
+                <button class="btn btn-sm btn-outline-secondary" onclick="loadHistory()">Refresh Logs</button>
+            </div>
+            <div class="table-responsive">
+                <table class="table align-middle">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Name</th>
+                            <th>Profile</th>
+                            <th>Start Time</th>
+                            <th>End Time</th>
+                            <th class="text-end">Report</th>
+                        </tr>
+                    </thead>
+                    <tbody id="history-tbody">
+                        <tr>
+                            <td colspan="5" class="text-center text-muted small py-4">No historical experiment logs</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.getElementById('nav-experiments').classList.add('active');
+
+    const socket = io('/stats', { transports: ['polling'] });
+
+    socket.on('metrics_update', (data) => {
+        const ind = document.getElementById('active-indicator');
+        const nameSpan = document.getElementById('active-name');
+        const runBtn = document.getElementById('btn-run');
+        
+        if (data.active_experiment) {
+            ind.classList.remove('d-none');
+            nameSpan.textContent = data.active_experiment;
+            runBtn.disabled = true;
+        } else {
+            ind.classList.add('d-none');
+            runBtn.disabled = false;
+        }
+    });
+
+    function startExperiment() {
+        const name = document.getElementById('exp-name').value.trim();
+        const profile = document.getElementById('exp-profile').value;
+        const duration = parseInt(document.getElementById('exp-duration').value);
+        if (!name) return alert("Please specify an experiment name");
+
+        fetch('/api/experiments/start', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: name, profile: profile, duration: duration })
+        })
+        .then(res => res.json())
+        .then(data => {
+            alert(data.message);
+            if (data.status === 'success') {
+                loadHistory();
+            }
+        });
+    }
+
+    function stopExperiment() {
+        fetch('/api/experiments/stop', {
+            method: 'POST'
+        })
+        .then(res => res.json())
+        .then(data => {
+            alert(data.message);
+            loadHistory();
+        });
+    }
+
+    function loadHistory() {
+        fetch('/api/experiments')
+        .then(res => res.json())
+        .then(data => {
+            const tbody = document.getElementById('history-tbody');
+            if (data.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="5" class="text-center text-muted small py-4">No historical experiment logs</td></tr>`;
+            } else {
+                tbody.innerHTML = data.map(exp => {
+                    const start = new Date(exp.start_time * 1000).toLocaleTimeString();
+                    const end = exp.end_time ? new Date(exp.end_time * 1000).toLocaleTimeString() : 'RUNNING';
+                    const config = JSON.parse(exp.configuration);
+                    
+                    return `
+                        <tr>
+                            <td class="metric-mono small">${exp.id}</td>
+                            <td class="font-weight-bold small">${exp.name}</td>
+                            <td><span class="badge bg-secondary">${config.profile.toUpperCase()}</span></td>
+                            <td class="metric-mono small">${start}</td>
+                            <td class="metric-mono small">${end}</td>
+                            <td class="text-end">
+                                <a href="/api/reports/download/${exp.id}" class="btn btn-sm btn-outline-primary py-0 px-2 font-weight-bold" style="font-size: 0.75rem;">PDF</a>
+                            </td>
+                        </tr>
+                    `;
+                }).join('');
+            }
+        });
+    }
+
+    // Load logs on initial page entry
+    loadHistory();
+</script>
+{% endblock %}

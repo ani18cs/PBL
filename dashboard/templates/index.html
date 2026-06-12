@@ -1,0 +1,245 @@
+{% extends "layout.html" %}
+
+{% block title %}Dashboard Overview - Defcon-D{% endblock %}
+
+{% block head %}
+<style>
+  .log-system   { color: #94a3b8; }
+  .log-info     { color: #60a5fa; }
+  .log-start    { color: #34d399; }
+  .log-detect   { color: #facc15; }
+  .log-orange   { color: #fb923c; }
+  .log-red      { color: #f87171; }
+  .log-mitigate { color: #a78bfa; }
+  .log-ok       { color: #4ade80; }
+
+  #log-console {
+    background: #0d1117;
+    border-radius: 10px;
+    border: 1px solid #1e293b;
+    font-family: 'Share Tech Mono', 'Courier New', monospace;
+    font-size: 0.82rem;
+    line-height: 1.65;
+    height: calc(100vh - 310px);
+    min-height: 420px;
+    overflow-y: scroll;
+    padding: 16px 20px;
+    scroll-behavior: smooth;
+  }
+
+  .log-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+  .legend-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 2px 10px;
+    border-radius: 20px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    background: rgba(0,0,0,0.04);
+    border: 1px solid #e2e8f0;
+  }
+  .legend-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+
+  .metric-card { border-left: 4px solid var(--accent-color, #3b82f6); }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<!-- Header -->
+<div class="row mb-3">
+  <div class="col-12 d-flex justify-content-between align-items-center">
+    <div>
+      <h2 class="mb-0">Dashboard Overview</h2>
+      <p class="text-muted mb-0" style="font-size:0.85rem;">Live traffic feed &middot; detection engine &middot; mitigation status</p>
+    </div>
+    <span id="severity-badge" class="status-badge status-green">&#9679; SYSTEM SECURE</span>
+  </div>
+</div>
+
+<!-- Metric Cards -->
+<div class="row text-center mb-4 g-3">
+  <div class="col-md-3">
+    <div class="card p-3 metric-card" style="--accent-color:#3b82f6;">
+      <div class="card-title text-muted" style="font-size:0.78rem;">TRAFFIC RATE</div>
+      <h3 id="val-pps" class="metric-mono mt-1 mb-0 text-primary">0 pps</h3>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card p-3 metric-card" style="--accent-color:#10b981;">
+      <div class="card-title text-muted" style="font-size:0.78rem;">ACTIVE CONNECTIONS</div>
+      <h3 id="val-conns" class="metric-mono mt-1 mb-0" style="color:#10b981;">0 conns</h3>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card p-3 metric-card" style="--accent-color:#f59e0b;">
+      <div class="card-title text-muted" style="font-size:0.78rem;">AVG LATENCY</div>
+      <h3 id="val-latency" class="metric-mono mt-1 mb-0" style="color:#f59e0b;">0.00 ms</h3>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card p-3 metric-card" style="--accent-color:#8b5cf6;">
+      <div class="card-title text-muted mb-1" style="font-size:0.78rem;">MITIGATION MODE</div>
+      <select id="val-mode"
+        class="form-select form-select-sm font-monospace fw-bold border-0 bg-transparent shadow-none text-center"
+        style="font-size:1.1rem; cursor:pointer; outline:none; color:#8b5cf6;"
+        onchange="changeMode(this.value)">
+        <option value="automatic">AUTOMATIC</option>
+        <option value="manual">MANUAL</option>
+        <option value="hybrid">HYBRID</option>
+      </select>
+    </div>
+  </div>
+</div>
+
+<!-- Full-width Live Log Console -->
+<div class="row">
+  <div class="col-12">
+    <div class="card p-4">
+
+      <!-- Toolbar -->
+      <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+        <div>
+          <span class="card-title" style="font-size:1rem;">&#128187; Live Network &amp; Attack Logs</span>
+          <span class="ms-2 badge bg-success" id="conn-badge" style="font-size:0.65rem;">&#9679; LIVE</span>
+        </div>
+        <div class="d-flex align-items-center gap-2">
+          <label class="form-check-label text-muted small me-1" for="auto-scroll-toggle">Auto-scroll</label>
+          <div class="form-check form-switch mb-0">
+            <input class="form-check-input" type="checkbox" id="auto-scroll-toggle" checked>
+          </div>
+          <button class="btn btn-sm btn-outline-secondary" onclick="clearLogs()" style="font-size:0.75rem;">Clear</button>
+        </div>
+      </div>
+
+      <!-- Colour Legend -->
+      <div class="log-legend">
+        <span class="legend-pill"><span class="legend-dot" style="background:#94a3b8;"></span><span style="color:#94a3b8;">SYSTEM</span></span>
+        <span class="legend-pill"><span class="legend-dot" style="background:#60a5fa;"></span><span style="color:#60a5fa;">INFO</span></span>
+        <span class="legend-pill"><span class="legend-dot" style="background:#34d399;"></span><span style="color:#34d399;">START/STOP</span></span>
+        <span class="legend-pill"><span class="legend-dot" style="background:#facc15;"></span><span style="color:#facc15;">DETECT</span></span>
+        <span class="legend-pill"><span class="legend-dot" style="background:#fb923c;"></span><span style="color:#fb923c;">ORANGE ALERT</span></span>
+        <span class="legend-pill"><span class="legend-dot" style="background:#f87171;"></span><span style="color:#f87171;">ATTACK / BLOCK</span></span>
+        <span class="legend-pill"><span class="legend-dot" style="background:#a78bfa;"></span><span style="color:#a78bfa;">MITIGATE</span></span>
+        <span class="legend-pill"><span class="legend-dot" style="background:#4ade80;"></span><span style="color:#4ade80;">RESOLVED</span></span>
+      </div>
+
+      <!-- Terminal -->
+      <div id="log-console">
+        <div class="log-system">[SYSTEM] Live monitoring console initialized. Waiting for logs...</div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+  document.getElementById('nav-dash').classList.add('active');
+
+  var autoScrollToggle = document.getElementById('auto-scroll-toggle');
+  var connBadge = document.getElementById('conn-badge');
+
+  var socket = io('/stats', { transports: ['polling'] });
+
+  socket.on('connect', function() {
+    connBadge.textContent = '● LIVE';
+    connBadge.className = 'ms-2 badge bg-success';
+    appendLog('[SYSTEM] WebSocket connected - streaming live.', 'system');
+  });
+
+  socket.on('disconnect', function() {
+    connBadge.textContent = '● OFFLINE';
+    connBadge.className = 'ms-2 badge bg-danger';
+    appendLog('[SYSTEM] WebSocket disconnected.', 'system');
+  });
+
+  socket.on('metrics_update', function(data) {
+    document.getElementById('val-pps').textContent = data.requests_per_second + ' pps';
+    document.getElementById('val-conns').textContent = data.active_connections + ' conns';
+    document.getElementById('val-latency').textContent = data.average_latency.toFixed(2) + ' ms';
+
+    var modeSelect = document.getElementById('val-mode');
+    if (modeSelect && modeSelect.value !== data.mode) modeSelect.value = data.mode;
+
+    var sevBadge = document.getElementById('severity-badge');
+    sevBadge.className = 'status-badge';
+    if (data.severity === 'GREEN') {
+      sevBadge.classList.add('status-green');
+      sevBadge.textContent = '● SYSTEM SECURE';
+    } else if (data.severity === 'YELLOW') {
+      sevBadge.classList.add('status-yellow');
+      sevBadge.textContent = '● SUSPICIOUS TRAFFIC';
+    } else if (data.severity === 'ORANGE') {
+      sevBadge.classList.add('status-orange');
+      sevBadge.textContent = '● ORANGE ALERT';
+    } else {
+      sevBadge.classList.add('status-red');
+      sevBadge.textContent = '● ATTACK DETECTED';
+    }
+  });
+
+  socket.on('security_log', function(data) {
+    appendLog(data.message);
+  });
+
+  function classifyLog(msg) {
+    var m = msg.toUpperCase();
+    if (m.indexOf('[RED') !== -1 || m.indexOf('BLOCKED IP') !== -1 || m.indexOf('ATTACK DETECTED') !== -1) return 'red';
+    if (m.indexOf('[ORANGE') !== -1 || m.indexOf('BURST') !== -1)   return 'orange';
+    if (m.indexOf('[YELLOW') !== -1 || m.indexOf('DETECT') !== -1 || m.indexOf('ANOMALY') !== -1) return 'detect';
+    if (m.indexOf('MITIGAT') !== -1 || m.indexOf('RATE LIMIT') !== -1 || m.indexOf('DROP') !== -1) return 'mitigate';
+    if (m.indexOf('UNBLOCK') !== -1 || m.indexOf('LIFTED') !== -1 || m.indexOf('RESOLVED') !== -1) return 'ok';
+    if (m.indexOf('START') !== -1 || m.indexOf('STOP') !== -1 || m.indexOf('EXPERIMENT') !== -1)   return 'start';
+    if (m.indexOf('[SYSTEM]') !== -1 || m.indexOf('INIT') !== -1)   return 'system';
+    return 'info';
+  }
+
+  function appendLog(message, forceClass) {
+    var consoleEl = document.getElementById('log-console');
+    var line = document.createElement('div');
+    line.className = 'log-' + (forceClass || classifyLog(message));
+    line.textContent = message;
+    consoleEl.appendChild(line);
+    if (autoScrollToggle.checked) consoleEl.scrollTop = consoleEl.scrollHeight;
+  }
+
+  function clearLogs() {
+    document.getElementById('log-console').innerHTML = '<div class="log-system">[SYSTEM] Console cleared.</div>';
+  }
+
+  function changeMode(mode) {
+    fetch('/api/mitigation/mode', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode: mode })
+    }).then(function(r) { return r.json(); })
+      .then(function() { appendLog('[SYSTEM] Mode changed to ' + mode.toUpperCase() + '.', 'system'); });
+  }
+
+  function loadInitialLogs() {
+    fetch('/api/logs')
+      .then(function(r) { return r.json(); })
+      .then(function(logs) {
+        var consoleEl = document.getElementById('log-console');
+        consoleEl.innerHTML = '';
+        if (logs.length === 0) {
+          consoleEl.innerHTML = '<div class="log-system">[SYSTEM] Console initialized. Waiting for logs...</div>';
+        } else {
+          logs.forEach(function(l) { appendLog(l); });
+        }
+      });
+  }
+
+  loadInitialLogs();
+</script>
+{% endblock %}

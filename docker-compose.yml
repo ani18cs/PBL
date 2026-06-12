@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  ddos_platform:
+    build: .
+    image: ddos_platform:latest
+    container_name: ddos_defence_platform
+    ports:
+      - "5000:5000"   # Flask SocketIO UI Dashboard
+      - "8080:8080"   # Target Server TCP socket listener
+    volumes:
+      - ddos_db_data:/app/database
+      - ddos_reports_data:/app/reports
+    environment:
+      - SECRET_KEY=cyber_security_educational_platform
+    networks:
+      - ddos_network
+    restart: unless-stopped
+
+volumes:
+  ddos_db_data:
+  ddos_reports_data:
+
+networks:
+  ddos_network:
+    driver: bridge

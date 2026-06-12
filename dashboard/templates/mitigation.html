@@ -1,0 +1,154 @@
+{% extends "layout.html" %}
+
+{% block title %}Mitigation Center - Defcon-D{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <h2>Mitigation Center</h2>
+        <p class="text-muted">Manage active rules, firewall blacklist blocks, and rate limiting thresholds</p>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Configuration Column -->
+    <div class="col-lg-4">
+        <div class="card p-4">
+            <span class="card-title mb-3">🛡️ Firewall Configuration</span>
+            
+            <div class="mb-4">
+                <label class="form-label font-weight-bold small">Mitigation Mode</label>
+                <div class="d-flex flex-column gap-2 mt-2">
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="mitigationMode" id="mode-automatic" value="automatic" checked onchange="changeMode('automatic')">
+                        <label class="form-check-label small" for="mode-automatic">
+                            Automatic Mode (Autoblock triggers)
+                        </label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="mitigationMode" id="mode-manual" value="manual" onchange="changeMode('manual')">
+                        <label class="form-check-label small" for="mode-manual">
+                            Manual Mode (User block overrides)
+                        </label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="mitigationMode" id="mode-hybrid" value="hybrid" onchange="changeMode('hybrid')">
+                        <label class="form-check-label small" for="mode-hybrid">
+                            Hybrid Mode (Alert + manual confirm)
+                        </label>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="border-top pt-3">
+                <span class="card-title mb-3 d-block">🚫 Manually Block IP</span>
+                <div class="mb-3">
+                    <label class="form-label small">IP Address</label>
+                    <input type="text" id="manual-ip" class="form-control form-control-sm" placeholder="e.g. 192.168.1.99">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small">Duration (seconds)</label>
+                    <input type="number" id="manual-duration" class="form-control form-control-sm" value="60">
+                </div>
+                <button class="btn btn-sm btn-primary w-100" onclick="manuallyBlock()">Add Block Rule</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Blocklist Column -->
+    <div class="col-lg-8">
+        <div class="card p-4">
+            <span class="card-title mb-3">⛔ Active Firewall Blacklist Blocklist</span>
+            <div class="table-responsive">
+                <table class="table align-middle">
+                    <thead>
+                        <tr>
+                            <th>IP Address</th>
+                            <th>Status</th>
+                            <th>Time Remaining</th>
+                            <th class="text-end">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="blocklist-tbody">
+                        <tr>
+                            <td colspan="4" class="text-center text-muted small py-4">No active firewall blocklists rules</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.getElementById('nav-mitigation').classList.add('active');
+
+    const socket = io('/stats');
+
+    socket.on('metrics_update', (data) => {
+        // Sync radio status if updated out-of-band
+        const targetRadio = document.getElementById(`mode-${data.mode}`);
+        if (targetRadio && !targetRadio.checked) {
+            targetRadio.checked = true;
+        }
+
+        // Render Blocklist rows
+        const tbody = document.getElementById('blocklist-tbody');
+        if (data.blocked_ips.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="4" class="text-center text-muted small py-4">No active firewall blocklists rules</td></tr>`;
+        } else {
+            tbody.innerHTML = data.blocked_ips.map(item => `
+                <tr>
+                    <td class="metric-mono font-weight-bold">${item.ip}</td>
+                    <td><span class="badge bg-danger">BLOCKED</span></td>
+                    <td class="metric-mono text-warning">${item.remaining}s</td>
+                    <td class="text-end">
+                        <button class="btn btn-sm btn-outline-success" onclick="unblockIP('${item.ip}')">Unblock</button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+    });
+
+    // API triggers
+    function changeMode(mode) {
+        fetch('/api/mitigation/mode', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mode: mode })
+        })
+        .then(res => res.json())
+        .then(res => console.log(res.message))
+        .catch(err => console.error(err));
+    }
+
+    function manuallyBlock() {
+        const ip = document.getElementById('manual-ip').value.trim();
+        const duration = parseInt(document.getElementById('manual-duration').value);
+        if (!ip) return alert("Enter a valid IP");
+
+        fetch('/api/mitigation/block', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ip: ip, duration: duration })
+        })
+        .then(res => res.json())
+        .then(data => {
+            alert(data.message);
+            document.getElementById('manual-ip').value = '';
+        });
+    }
+
+    function unblockIP(ip) {
+        fetch('/api/mitigation/unblock', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ip: ip })
+        })
+        .then(res => res.json())
+        .then(data => alert(data.message));
+    }
+</script>
+{% endblock %}
