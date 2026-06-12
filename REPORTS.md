@@ -147,26 +147,30 @@ Where $P(x_i)$ is the probability of occurrence of IP $x_i$ within the traffic s
 
 ---
 
-## 6. Mitigation Engine & Firewall Rules
+## 6. Mitigation Engine & Simulated Traffic Defense
 
-Mitigation algorithms run with thread synchronization locks (`threading.Lock()`) to handle concurrent requests without race conditions.
+Mitigation algorithms run with thread synchronization locks (`threading.Lock()`) to handle concurrent requests without race conditions. Since both the simulator and server execute on the same local loopback interface (`127.0.0.1`), the platform implements a specialized request parsing logic to ensure realistic blocking simulations:
 
-### A. Sliding-Window Rate Limiting (`mitigation/rate_limiter.py`)
+### A. Connection-Level Block Handling for Local Traffic
+* **Header Parsing**: As TCP sockets initially accept connections from loopback (`127.0.0.1`), the system parses the HTTP `Host:` headers inside the thread handler (`server/request_handler.py`) to discover the client's simulated IP (e.g. `192.168.1.113`).
+* **Connection & Blacklist Check**: On the very first request received on a socket, the thread evaluates the simulated IP against active firewall blocklists and connection concurrency limits.
+* **Active Blocking & Drop**: If the simulated IP is blacklisted, the socket is immediately closed without sending a response, and the drop event is logged: `[TargetServer] BLOCKED incoming connection from [IP]`.
+* **Telemetry Reporting**: Blocked requests are registered in the connection manager as a traffic attempt (`register_blocked_request()`), allowing the dashboard's **Traffic Rate (PPS)** meter to show the full attack volume while displaying blocks.
+
+### B. Sliding-Window Rate Limiting (`mitigation/rate_limiter.py`)
 * Keeps a history list of request timestamps for each IP.
 * When a request arrives, timestamps older than $1.0\text{ second}$ are dropped:
   $$\text{timestamps} = \{t \mid t_{\text{current}} - t < 1.0\text{s}\}$$
 * If the number of remaining timestamps is $\ge 15$, the request is blocked.
 * In **Automatic** mode, this rate limit breach triggers an immediate IP blacklist rule.
 
-### B. Connection Concurrency Limiter (`mitigation/connection_limiter.py`)
-* Tracks active TCP connection counts for each IP address.
-* If active connections for an IP reach the limit (default: **8**), new socket handshakes from that IP are rejected.
-* In **Automatic** mode, reaching this limit triggers an immediate IP blacklist rule.
+### C. Dynamic IP Rotation (Attacker Evasion Simulation)
+* **IP Rotation on Block**: In `simulator/traffic_generator.py`, when a virtual client connection is closed or dropped by the firewall (returning an empty response or raising a socket exception), the simulator logs the failure status `[---]` and immediately rotates that client's simulated IP to a new random IP in the `192.168.1.100 - 250` range.
+* **Realistic Anomaly Flow**: This simulates a dynamic botnet where the firewall detects and blocks an attacker IP, and the attacker instantly transitions to a new source IP to keep flooding the server.
 
-### C. Blacklist Manager & Auto-Aging (`mitigation/blacklist_manager.py`)
-* Maintains a mapping of blocked IPs to unblock timestamps.
-* Excludes internal addresses (`127.0.0.1`, `localhost`) from blocking.
-* **Self-Cleaning / Expiry check**: When checking `is_blocked()`, if the current time exceeds the unblock timestamp, the IP is removed from the blacklist, a thread is spawned to log `LIFT_LIMIT` in SQLite, and access is restored.
+### D. Blacklist Manager & Auto-Aging (`mitigation/blacklist_manager.py`)
+Manages temporary or permanent IP blocks.
+* **Auto-Aging/Expiration**: A background checker automatically lifts expired blocks and logs `LIFT_LIMIT` actions. When checking `is_blocked()`, if the current time exceeds the unblock timestamp, the IP is removed from the blacklist, a thread is spawned to log `LIFT_LIMIT` in SQLite, and access is restored.
 
 ### D. Operational Mitigation Modes
 1. **`automatic`**: Blocks rate limit or connection limit offenders automatically (30s and 60s blocks respectively).
