@@ -36,6 +36,11 @@ class ConnectionManager:
             self.client_stats[ip]["total_latency"] += latency
             self.latency_samples.append(latency)
 
+    def register_blocked_request(self):
+        """Increments traffic attempt counters for dropped/blocked requests."""
+        with self.lock:
+            self.total_requests += 1
+
     def get_active_count(self):
         """Returns current active socket connection count."""
         with self.lock:

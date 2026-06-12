@@ -7,6 +7,7 @@ def handle_client_socket(client_sock, client_addr, conn_manager, mitigation_cont
     ip = client_addr[0]
     
     try:
+        is_first = True
         client_sock.settimeout(5.0)  # 5-second idle timeout
         last_ip = ip
         while True:
@@ -33,10 +34,31 @@ def handle_client_socket(client_sock, client_addr, conn_manager, mitigation_cont
             
             last_ip = current_ip
 
-            # Mitigation limit rate checking
+            # Mitigation checks for simulated IP
             if mitigation_controller:
+                if is_first:
+                    # Register/check simulated IP's firewall status & connection limits
+                    if not mitigation_controller.handle_incoming_connection(current_ip):
+                        conn_manager.register_blocked_request()
+                        try:
+                            from dashboard import state
+                            state.add_log("TargetServer", f"BLOCKED incoming connection from {current_ip} (Firewall / Blacklist active)")
+                        except Exception:
+                            pass
+                        break
+                    is_first = False
+                
+                # Check rate limits
                 if not mitigation_controller.handle_request(current_ip):
+                    conn_manager.register_blocked_request()
+                    try:
+                        from dashboard import state
+                        state.add_log("TargetServer", f"BLOCKED request from {current_ip} (Rate Limit Exceeded)")
+                    except Exception:
+                        pass
                     break
+            else:
+                is_first = False
                 
             start_time = time.time()
             

@@ -51,6 +51,7 @@ class TrafficGenerator:
 
     def _client_loop(self, client_ip, interval):
         """Repeatedly establishes TCP sockets and sends messages to simulate loading."""
+        current_ip = client_ip
         while self.running:
             try:
                 # Target host validation check (educational security guardrail)
@@ -77,7 +78,7 @@ class TrafficGenerator:
                 )
                 if not is_internal:
                     print("[TrafficGenerator] Guardrail Alert: Target server is external. ACCIDENTAL ATTACK BLOCKED.")
-                    _log(f"GUARDRAIL: External target blocked for {client_ip} — only localhost/private IPs allowed.")
+                    _log(f"GUARDRAIL: External target blocked for {current_ip} — only localhost/private IPs allowed.")
                     break
 
                 # Connect client socket
@@ -88,14 +89,32 @@ class TrafficGenerator:
                 actual_delay = interval * random.uniform(0.8, 1.2)
                 
                 # Send standard request payload
-                payload = f"GET / HTTP/1.1\r\nHost: {client_ip}\r\n\r\n"
+                payload = f"GET / HTTP/1.1\r\nHost: {current_ip}\r\n\r\n"
                 sock.sendall(payload.encode())
-                response = sock.recv(1024)  # Read server response (ACK)
-                status = "200 OK" if b"200" in response else ("429" if b"429" in response else "---")
-                _log(f"REQ  {client_ip} → {self.target_host}:{self.target_port}  [{status}]  delay={actual_delay:.3f}s")
+                
+                response = b""
+                try:
+                    response = sock.recv(1024)  # Read server response (ACK)
+                except Exception:
+                    pass
+                
+                if not response:
+                    status = "---"
+                    _log(f"REQ  {current_ip} → {self.target_host}:{self.target_port}  [{status}]  delay={actual_delay:.3f}s")
+                    # Rotate to a new IP since this one was blocked
+                    old_ip = current_ip
+                    current_ip = f"192.168.1.{random.randint(100, 250)}"
+                    while current_ip == old_ip:
+                        current_ip = f"192.168.1.{random.randint(100, 250)}"
+                else:
+                    status = "200 OK" if b"200" in response else ("429" if b"429" in response else "---")
+                    _log(f"REQ  {current_ip} → {self.target_host}:{self.target_port}  [{status}]  delay={actual_delay:.3f}s")
+                    
                 sock.close()
                 time.sleep(actual_delay)
                 
             except Exception as e:
-                _log(f"ERR  {client_ip} → connection failed: {e}")
+                _log(f"ERR  {current_ip} → connection failed: {e}")
+                # Rotate IP on connection failure
+                current_ip = f"192.168.1.{random.randint(100, 250)}"
                 time.sleep(0.5)
